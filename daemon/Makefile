@@ -47,4 +47,4 @@ apply-bindata: go-bindata
 	../contrib/scripts/bindata.sh apply
 
 go-bindata:
-	$(GO_BINDATA) -o ./bindata.go `git ls-files ../bpf/`
+	$(GO_BINDATA) -o ./bindata.go `find ../bpf/ -type f -regextype posix-extended -regex '.*((\.(sh|c|h|t))|(COPYING)|(Makefile))$ '| sort`
