@@ -63,6 +63,16 @@ func (id NumericIdentity) Uint32() uint32 {
 	return uint32(id)
 }
 
+// NIPortProto represents a L3-dependent L4 rule
+type NIPortProto struct {
+	// SecID is the security ID for the numeric identity
+	SecID NumericIdentity
+	// Port is the destination port in the policy
+	Port uint16
+	// Proto is the protocol ID used
+	Proto uint8
+}
+
 // Identity is the representation of the security context for a particular set of
 // labels.
 type Identity struct {

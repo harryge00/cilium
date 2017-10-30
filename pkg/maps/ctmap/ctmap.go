@@ -23,6 +23,7 @@ import (
 
 	"github.com/cilium/cilium/pkg/bpf"
 	"github.com/cilium/cilium/pkg/byteorder"
+	"github.com/cilium/cilium/pkg/policy"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -99,7 +100,7 @@ type GCFilterFlags uint
 type GCFilter struct {
 	Time    uint32
 	IP      net.IP
-	IDsToRm map[uint32]bool
+	IDsToRm map[policy.NIPortProto]bool
 	fType   GCFilterFlags
 }
 
@@ -107,7 +108,7 @@ type GCFilter struct {
 func NewGCFilterBy(f GCFilterFlags) *GCFilter {
 	return &GCFilter{
 		fType:   f,
-		IDsToRm: map[uint32]bool{},
+		IDsToRm: map[policy.NIPortProto]bool{},
 	}
 }
 
@@ -121,6 +122,10 @@ func (f *GCFilter) TypeString() string {
 	default:
 		return "(unknown)"
 	}
+}
+
+func (f *GCFilter) hasIDsToRemove() bool {
+	return f.fType&GCFilterByID != 0 && len(f.IDsToRm) != 0
 }
 
 // ToString iterates through Map m and writes the values of the ct entries in m
@@ -220,6 +225,10 @@ func doGC6(m *bpf.Map, filter *GCFilter) int {
 		return 0
 	}
 
+	if !filter.hasIDsToRemove() {
+		return 0
+	}
+
 	for {
 		del = false
 		nextKeyValid := m.GetNextKey(&nextKey, &tmpKey)
@@ -237,22 +246,24 @@ func doGC6(m *bpf.Map, filter *GCFilter) int {
 			entry.lifetime < filter.Time {
 
 			del = true
-			//log.WithField(logfields.Object, logfields.Repr(entry)).Debug("Deleting IPv4 entry since it timeout")
 		}
+
+		n := nextKey.ToHost().(*CtKey6Global)
 		if filter.fType&GCFilterByID != 0 &&
 			// In CT's entries, saddr is the packet's receiver,
 			// which means, is the destination container IP.
-			nextKey.saddr.IP().Equal(filter.IP) {
+			n.saddr.IP().Equal(filter.IP) {
+
+			nipp := policy.NIPortProto{
+				SecID: policy.NumericIdentity(entry.src_sec_id),
+				Port:  n.sport,
+				Proto: uint8(n.nexthdr),
+			}
 
 			// Check if the src_sec_id of that entry is not allowed
 			// to talk with the destination container IP.
-			if _, ok := filter.IDsToRm[entry.src_sec_id]; ok {
-
+			if _, ok := filter.IDsToRm[nipp]; ok {
 				del = true
-				//log.WithFields(log.Fields{
-				//	logfields.IPAddr:   filter.IP,
-				//	logfields.Identity: entry.src_sec_id,
-				//}).Debug("Deleting IPv6 entry since ID is no longer being consumed by filter")
 			}
 		}
 
@@ -287,6 +298,10 @@ func doGC4(m *bpf.Map, filter *GCFilter) int {
 		return 0
 	}
 
+	if !filter.hasIDsToRemove() {
+		return 0
+	}
+
 	for true {
 		del = false
 		nextKeyValid := m.GetNextKey(&nextKey, &tmpKey)
@@ -304,22 +319,22 @@ func doGC4(m *bpf.Map, filter *GCFilter) int {
 			entry.lifetime < filter.Time {
 
 			del = true
-			//log.WithField(logfields.Object, logfields.Repr(entry)).Debug("Deleting IPv6 entry since it timeout")
 		}
+		n := nextKey.ToHost().(*CtKey4Global)
 		if filter.fType&GCFilterByID != 0 &&
 			// In CT's entries, saddr is the packet's receiver,
 			// which means, is the destination container IP.
-			nextKey.saddr.IP().Equal(filter.IP) {
+			n.saddr.IP().Equal(filter.IP) {
 
+			nipp := policy.NIPortProto{
+				SecID: policy.NumericIdentity(entry.src_sec_id),
+				Port:  n.sport,
+				Proto: uint8(n.nexthdr),
+			}
 			// Check if the src_sec_id of that entry is not allowed
 			// to talk with the destination container IP.
-			if _, ok := filter.IDsToRm[entry.src_sec_id]; ok {
-
+			if _, ok := filter.IDsToRm[nipp]; ok {
 				del = true
-				//log.WithFields(log.Fields{
-				//	logfields.IPAddr:   filter.IP,
-				//	logfields.Identity: entry.src_sec_id,
-				//}).Debug("Deleting IPv4 entry since ID is no longer being consumed by filter")
 			}
 		}
 
@@ -344,6 +359,10 @@ func doGC4(m *bpf.Map, filter *GCFilter) int {
 // It returns how many items were deleted from m.
 func GC(m *bpf.Map, mapName string, filter *GCFilter) int {
 	if filter.fType&GCFilterByTime != 0 {
+		// If LRUHashtable, no need to garbage collect as LRUHashtable cleans itself up.
+		if m.MapInfo.MapType == bpf.MapTypeLRUHash {
+			return 0
+		}
 		t, _ := bpf.GetMtime()
 		tsec := t / 1000000000
 		filter.Time = uint32(tsec)
