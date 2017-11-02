@@ -20,7 +20,7 @@ tests: tests-common tests-consul
 tests-ginkgo: tests-common-ginkgo
 
 tests-common-ginkgo: force
-	./test/shell_scripts/run_tests
+	test/shell_scripts/run_tests
 	go vet $(GOFILES)
 	# Make the bindata to run the unittest
 	make -C daemon go-bindata
