@@ -91,6 +91,22 @@ tests-consul:
 	@rmdir ./daemon/1 ./daemon/1_backup 2> /dev/null || true
 	docker rm -f "cilium-consul-test-container"
 
+
+benchmarks:
+	@docker rm -f "cilium-consul-test-container" 2> /dev/null || true
+	-docker run -d \
+           --name "cilium-consul-test-container" \
+           -p 8501:8500 \
+           -e 'CONSUL_LOCAL_CONFIG={"skip_leave_on_interrupt": true}' \
+           consul:0.8.3 \
+           agent -client=0.0.0.0 -server -bootstrap-expect 1
+	$(foreach pkg,$(GOFILES),\
+	go test \
+            -ldflags "-X "github.com/cilium/cilium/pkg/kvstore".backend=consul" \
+            -timeout 120s $(pkg) -run='Benchmark.*' -bench=. -check.b || exit 1;)
+	@rmdir ./daemon/1 ./daemon/1_backup 2> /dev/null || true
+	docker rm -f "cilium-consul-test-container"
+
 clean-tags:
 	-$(MAKE) -C bpf/ clean-tags
 	-rm -f cscope.out cscope.in.out cscope.po.out cscope.files tags

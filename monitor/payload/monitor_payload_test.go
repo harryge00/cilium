@@ -16,6 +16,7 @@ package payload
 
 import (
 	"bytes"
+	"encoding/gob"
 	"testing"
 
 	"github.com/cilium/cilium/pkg/comparator"
@@ -119,5 +120,111 @@ func (s *PayloadSuite) BenchmarkReadMetaPayload(c *C) {
 		readBuf := bytes.NewBuffer(buf.Bytes())
 		err = ReadMetaPayload(readBuf, &meta2, &payload2)
 		c.Assert(err, Equals, nil)
+	}
+}
+
+func BenchmarkWriteMetaPayload(b *testing.B) {
+	b.ReportAllocs()
+	meta1 := Meta{Size: 1234}
+	payload1 := Payload{
+		Data: []byte{1, 2, 3, 4},
+		Lost: 5243,
+		CPU:  12,
+		Type: 9,
+	}
+
+	// Fill the buffer once so it allocates enough ram so that we don't need to
+	// reallocate again during the test
+	var buf bytes.Buffer
+	err := WriteMetaPayload(&buf, &meta1, &payload1)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		err := WriteMetaPayload(&buf, &meta1, &payload1)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkReadMetaPayload(b *testing.B) {
+	b.ReportAllocs()
+	payload1 := Payload{
+		Data: []byte{1, 2, 3, 4},
+		Lost: 5243,
+		CPU:  12,
+		Type: 9,
+	}
+	buf, err := payload1.Encode()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	var payload2 Payload
+	for i := 0; i < b.N; i++ {
+		err = payload2.Decode(buf)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkGobEncode(b *testing.B) {
+	b.ReportAllocs()
+	pl := Payload{
+		Data: []byte{1, 2, 3, 4},
+		Lost: 5243,
+		CPU:  12,
+		Type: 9,
+	}
+
+	// Fill the buffer once so it allocates enough ram so that we don't need to
+	// reallocate again during the test
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(pl)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		err := enc.Encode(pl)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkGobDecode(b *testing.B) {
+	b.ReportAllocs()
+	pl := Payload{
+		Data: []byte{1, 2, 3, 4},
+		Lost: 5243,
+		CPU:  12,
+		Type: 9,
+	}
+
+	var bufOriginal bytes.Buffer
+	enc := gob.NewEncoder(&bufOriginal)
+	err := enc.Encode(pl)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	var pl2 Payload
+	var buf bytes.Buffer
+	pristine := append([]byte{}, bufOriginal.Bytes()...)
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		buf.Write(pristine)
+		dec := gob.NewDecoder(&buf)
+		err := dec.Decode(&pl2)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
