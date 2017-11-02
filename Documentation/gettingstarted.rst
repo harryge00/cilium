@@ -71,10 +71,9 @@ Step 1: Installing Cilium
 The next step is to install Cilium into your Kubernetes cluster.  Cilium installation
 leverages the `Kubernetes Daemon Set <https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/>`_
 abstraction, which will deploy one Cilium pod per
-cluster node.   This Cilium pod will run in the ``kube-system`` namespace along with
+cluster node.  This Cilium pod will run in the ``kube-system`` namespace along with
 all other system relevant daemons and services.  The Cilium pod will run both the Cilium
-agent and the Cilium CNI plugin.  The Cilium daemonset also starts a pod running
-`Consul <https://www.consul.io/>`_ as the underlying key-value store.
+agent and the Cilium CNI plugin.
 
 To deploy Cilium, run:
 
@@ -95,12 +94,16 @@ Run the following command to check the progress of the deployment:
 
 ::
 
-    $ kubectl get ds --namespace kube-system
-    NAME            DESIRED   CURRENT   READY     NODE-SELECTOR   AGE
-    cilium          1         1         1         <none>          2m
+    $ kubectl get pods --namespace kube-system
+    NAME                          READY     STATUS    RESTARTS   AGE
+    cilium-wjb9t                  0/1       Running   0          1m
+    kube-addon-manager-minikube   1/1       Running   0          1m
+    kube-dns-910330662-hmw9k      3/3       Running   0          1m
+    kubernetes-dashboard-nfg7m    1/1       Running   0          1m
 
-Wait until the cilium and cilium-consul Deployments shows a ``READY``
-count of ``1`` like above.
+
+Wait until the Cilium pod shows the ``STATUS`` as ``Running``, like above. In this tutorial, it's okay to 
+move forward with the ``READY`` status as 0.
 
 Step 2: Deploy the Demo Application
 ===================================
@@ -702,19 +705,7 @@ of the same TCP/UDP connection.
 
 We can achieve that with the following Cilium policy:
 
-::
-
-    [{
-        "endpointSelector": {"matchLabels":{"id":"app1"}},
-        "ingress": [{
-            "fromEndpoints": [
-                {"matchLabels":{"id":"app2"}}
-            ],
-            "toPorts": [{
-                    "ports": [{"port": "80", "protocol": "TCP"}]
-            }]
-        }]
-    }]
+.. literalinclude:: ../examples/policies/getting-started/cilium_dkr_demo_l3-l4-policy-170817.json
 
 Save this JSON to a file named l3_l4_policy.json in your VM, and apply the
 policy by running:
@@ -729,7 +720,7 @@ Step 8: Test L3/L4 Policy
 =========================
 
 
-You can now launch additional containers represent other services attempting to
+You can now launch additional containers that represent other services attempting to
 access *app1*. Any new container with label "id=app2" will be allowed
 to access *app1* on port 80, otherwise the network request will be dropped.
 
@@ -741,9 +732,9 @@ with the label "id=app2" :
     $ docker run --rm -ti --net cilium-net -l "id=app2" cilium/demo-client curl -m 20 http://app1
     <html><body><h1>It works!</h1></body></html>
 
-We can see that this request was successful, as we get a valid ping responses.
+We can see that this request was successful, as we get a valid HTTP response.
 
-Now let's run the same ping request to *app1* from a container that has
+Now let's run the same HTTP request to *app1* from a container that has
 label "id=app3":
 
 ::
@@ -804,25 +795,7 @@ API call, but disallowing all other calls (including GET /private).
 
 The following Cilium policy file achieves this goal:
 
-::
-
-    [{
-        "endpointSelector": {"matchLabels":{"id":"app1"}},
-        "ingress": [{
-            "fromEndpoints": [
-                {"matchLabels":{"id":"app2"}}
-            ],
-            "toPorts": [{
-                "ports": [{"port": "80", "protocol": "TCP"}],
-                "rules": {
-                    "HTTP": [{
-                        "method": "GET",
-                        "path": "/public"
-                    }]
-                }
-            }]
-        }]
-    }]
+.. literalinclude:: ../examples/policies/getting-started/cilium_dkr_demo_l7-policy-230817.json
 
 Create a file with this contents and name it l7_aware_policy.json. Then
 import this policy to Cilium by running:
@@ -1015,7 +988,6 @@ You should see output similar to the following:
 
 ::
 
-    $ curl -i -H 'Content-Type: application/json' -d @web-server.json 127.0.0.1:8080/v2/apps
     HTTP/1.1 201 Created
     ...
     Marathon-Deployment-Id: [UUID]
@@ -1098,20 +1070,7 @@ Step 7: Apply L3/L4 Policy with Cilium
 
 Apply an L3/L4 policy only allowing the *goodclient* to access the *web-server*. The L3/L4 json policy looks like:
 
-::
-
-    [{
-        "endpointSelector": {"matchLabels":{"id":"web-server"}},
-        "ingress": [{
-            "fromEndpoints": [
-                {"matchLabels":{"id":"goodclient"}}
-            ],
-            "toPorts": [{
-                    "ports": [{"port": "8181", "protocol": "TCP"}]
-            }]
-        }]
-    }]
-
+.. literalinclude:: ../examples/policies/getting-started/l3-l4-policy.json
 
 In your original terminal session, use ``cilium`` CLI to apply the L3/L4 policy above, saved in the ``l3-l4-policy.json`` file on the VM:
  
@@ -1172,25 +1131,7 @@ Step 8: Apply L7 Policy with Cilium
 
 Now, apply an L7 Policy that only allows access for the *goodclient* to the */public* API, included in the ``l7-policy.json`` file:
 
-::
-
-    [{
-        "endpointSelector": {"matchLabels":{"id":"web-server"}},
-        "ingress": [{
-            "fromEndpoints": [
-                {"matchLabels":{"id":"goodclient"}}
-            ],
-            "toPorts": [{
-                "ports": [{"port": "8181", "protocol": "TCP"}],
-                "rules": {
-                    "HTTP": [{
-                        "method": "GET",
-                        "path": "/public"
-                    }]
-                }
-            }]
-        }]
-    }]
+.. literalinclude:: ../examples/policies/getting-started/l7-policy.json
 
 Apply using ``cilium`` CLI:
 
