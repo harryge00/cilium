@@ -13,3 +13,7 @@ Fixes: #issue-number
 ```release-note
 <!-- Enter the release note text here if needed -->
 ```
+
+**How to test (optional)**:
+e.g. Run `make tests`, `make runtime-tests` and/or some more specific way to
+exercise the new behavior(s).
